@@ -1,0 +1,47 @@
+#
+# Config file for server stack
+# @company Havana IT & APPS
+# @author  Yann Blacher
+# @license MIT
+#
+
+## Directories
+# The main directory for data persistence
+export GITEA_HOME=/var/lib/gitea-lab
+# Postgres container data directory
+export GITEA_DB_DIR=${GITEA_HOME}/db
+# Gitea container data directory
+export GITEA_DATA_DIR=${GITEA_HOME}/app
+
+## Host & Ports config
+## Ports here are those externally exposed by Gitea
+# Port for SSH connections
+export GITEA_SSH_PORT=10022
+# Port for Gitea UI
+export GITEA_HTTP_PORT=3000
+# Port for PostgreSQL server
+export GITEA_PGSQL_PORT=5433
+# SSH & HTTP Domain
+export GITEA_DOMAIN=localhost
+# HTTP UI Host
+export GITEA_HOST=localhost
+
+## Database
+# Role used by gitea
+export GITEA_PG_USER=gitea
+# Password for gitea role
+export GITEA_PG_PASSWD=admin123
+# DB used by Gitea
+export GITEA_PG_DBNAME=gitea
+# PostgreSQL admin password
+export GITEA_PG_ADMIN_PASSWD=dba
+
+## Docker compose configuration
+# Project name passed to docker compose (via -p option)
+export GITEA_COMPOSE_PROJECT_NAME=gitea
+# DB service name. 
+# This MUST match the service name defined in docker-compose.yml
+export GITEA_COMPOSE_SERVICE_NAME_DB=db
+# Gitea app service name. 
+# This MUST match the service name defined in docker-compose.yml
+export GITEA_COMPOSE_SERVICE_NAME_APP=app

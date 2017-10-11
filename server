@@ -1,0 +1,126 @@
+#!/bin/bash
+#
+# Server startup/monitoring script
+# @company Havana IT & APPS
+# @author  Yann Blacher
+# @license MIT
+#
+
+# Source config file
+source gitearc
+
+# Return container id, given the service name
+# @param  $service  The name of the service to search for
+get_docker_id(){
+    docker ps --filter="name=${GITEA_COMPOSE_PROJECT_NAME}_$1" -q | tr -d "\n"
+}
+
+# Return DB container id
+get_db_docker_id(){
+    get_docker_id ${GITEA_COMPOSE_SERVICE_NAME_DB}
+}
+
+# Return list of config variables
+get_config_vars(){
+    awk '/^export/ { gsub(/=.*$/,""); print $2;}' gitearc
+}
+
+# Check if gitea DB was created yet
+is_db_initialized(){
+    local db_docker_id nb
+    db_docker_id=`get_db_docker_id`
+    # For an unknown reason, the command output contains a carriage return character (CR)
+    nb=`docker exec -it $db_docker_id psql -U postgres -c "SELECT count(*) FROM pg_database WHERE datname='${GITEA_PG_DBNAME}';" -t -A | tr -d "\r"`
+    [[ "$nb" -eq "1" ]]
+}
+
+# Create gitea role & database
+do_init_db (){
+    local db_docker_id
+    db_docker_id=`get_db_docker_id`
+    echo "docker exec -it ${db_docker_id} psql -U postgres -c \"CREATE USER ${GITEA_PG_USER} WITH PASSWORD '${GITEA_PG_PASSWD}';\""
+    docker exec -it ${db_docker_id} /exec-psql-command.sh "CREATE USER ${GITEA_PG_USER} WITH PASSWORD '${GITEA_PG_PASSWD}';"
+    echo "docker exec -it ${db_docker_id} psql -U postgres -c \"CREATE DATABASE ${GITEA_PG_DBNAME} OWNER ${GITEA_PG_USER};\""
+    docker exec -it ${db_docker_id} /exec-psql-command.sh "CREATE DATABASE ${GITEA_PG_DBNAME} OWNER ${GITEA_PG_USER};"
+}
+
+# Create app.ini file from template using config values
+do_build_config(){
+    local v var value
+    cp -v app.ini.tpl app.ini
+    for v in `get_config_vars`
+    do
+        printf -v var "##%s##" $v
+        value=${!v}
+        #printf "var=[%s]\n" $var
+        sed -i "s~$var~$value~" app.ini
+    done
+    cp -v app.ini ${GITEA_DATA_DIR}/gitea/conf/
+}
+
+# Issue a call to docker-compose with appropriate CLI options
+# @param  $arg1...$argN  List of CLI arguments to pass to docker compose
+do_call_compose(){
+    docker-compose -p ${GITEA_COMPOSE_PROJECT_NAME} "$@"
+}
+
+# Launch the postgres waiter utility in DB container
+do_wait_for_db(){
+    local db_docker_id
+    db_docker_id=`get_db_docker_id`
+    docker exec -it $db_docker_id ./wait-for-postgres
+}
+
+# Starts server stack and wait until DB is ready for commands
+do_start (){
+    do_call_compose up -d
+    # Wait for PostgreSQL server to be ready
+    do_wait_for_db
+    return $?
+}
+
+# Stop all stack containers
+do_stop(){
+    do_call_compose stop
+}
+
+# Destroy stack container & images (and optionaly gitea & postgres images, if invoked with flag --all)
+# @param  $flag  Optional --all switch to destroy system images
+do_destroy(){
+    docker rm `docker ps --filter="name=${GITEA_COMPOSE_PROJECT_NAME}" -aq`
+    docker rmi -f `docker images -aq ${GITEA_COMPOSE_PROJECT_NAME}_${GITEA_COMPOSE_SERVICE_NAME_DB}`
+    docker rmi -f `docker images -aq ${GITEA_COMPOSE_PROJECT_NAME}_${GITEA_COMPOSE_SERVICE_NAME_APP}`
+    if [ "$1" = "--all" ]
+    then
+        docker rmi -f `docker images -aq gitea/gitea`
+        docker rmi -f `docker images -aq postgres`
+    fi
+}
+
+case $1 in
+    start)
+        do_start 
+        is_db_initialized || do_init_db
+        ;;
+    stop)
+        do_stop
+        ;;
+    help)
+        printf "Usage: %s start|stop\n" $0
+        exit 0
+        ;;
+    bootstrap)
+        do_build_config
+        ;;
+    destroy)
+        do_stop
+        do_destroy
+        ;;
+    destroy-all)
+        do_stop
+        do_destroy --all
+        ;;
+    *)
+        do_call_compose "$@"
+        ;;
+esac

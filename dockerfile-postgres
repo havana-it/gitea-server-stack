@@ -1,0 +1,10 @@
+FROM postgres:alpine
+
+# Set timezone
+COPY timezone /etc/
+RUN rm /etc/localtime
+RUN ln -s /usr/share/zoneinfo/`cat /etc/timezone` /etc/localtime
+
+# Postgres-specific helpers
+COPY wait-for-postgres /
+COPY exec-psql-command.sh /
